@@ -185,9 +185,9 @@ export function simulate(buildings, components, ghi = GHI_REFERENCE) {
     capexH2 * OPEX_FRAC.h2tank +
     capexFC * OPEX_FRAC.fuelcell +
     capexBatt * OPEX_FRAC.battery
-  const annGridCost = yrGridImport * GRID_BUY - yrGridExport * GRID_SELL
+  const annGridCost = Math.max(0, yrGridImport * GRID_BUY - yrGridExport * GRID_SELL)  // non-negative: export revenue capped at import cost
   const annWaterCost = yrWater * WATER_COST
-  const totalAnnualCost = annCapex + annOpex + annGridCost + annWaterCost
+  const totalAnnualCost = Math.max(0, annCapex + annOpex + annGridCost + annWaterCost)  // total cost non-negative
 
   const totalLoad24h = totalLoad.reduce((a, b) => a + b, 0)
   const totalSolar24h = solarGen.reduce((a, b) => a + b, 0)
@@ -198,7 +198,7 @@ export function simulate(buildings, components, ghi = GHI_REFERENCE) {
     : 100
 
   const lcoe = totalLoad24h > 0
-    ? (totalAnnualCost / (totalLoad24h * 365)) * 100
+    ? Math.max(0, (totalAnnualCost / (totalLoad24h * 365)) * 100)   // ct/kWh, non-negative
     : 0
 
   const reFraction = totalLoad24h > 0
