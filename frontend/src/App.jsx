@@ -267,20 +267,29 @@ export default function App() {
 
   const fmtM = v => v >= 1e6 ? `€${(v / 1e6).toFixed(2)}M` : `€${Math.round(v / 1000)}k`
 
+  // ── Target RE fraction (user input) ─────────────────────────
+  const [targetRe, setTargetRe] = useState(50)   // percent
+  const [optimizeResult, setOptimizeResult] = useState(null)
+
   // ── Backend LP optimise ──────────────────────────────────────
   const handleOptimize = useCallback(async () => {
     setOptimizing(true)
-    setOptimizeMsg('Calling LP optimizer...')
+    setOptimizeMsg('Running optimizer...')
+    setOptimizeResult(null)
     try {
       const apiUrl = import.meta.env.VITE_API_URL || ''
       const resp = await fetch(`${apiUrl}/api/optimize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ buildings }),
+        body: JSON.stringify({
+          buildings,
+          storage_mode: storageMode,
+          target_re: targetRe / 100,
+          ghi,
+        }),
       })
       if (!resp.ok) throw new Error(await resp.text())
       const data = await resp.json()
-      // Backend returns fields directly: solar_kw, electrolyzer_kw, etc.
       setComp({
         solar:        Math.round(data.solar_kw        ?? comp.solar),
         electrolyzer: Math.round(data.electrolyzer_kw ?? comp.electrolyzer),
@@ -288,14 +297,15 @@ export default function App() {
         fuelcell:     Math.round(data.fuelcell_kw     ?? comp.fuelcell),
         battery:      Math.round(data.battery_kwh     ?? comp.battery),
       })
-      setOptimizeMsg('Optimal sizing applied!')
+      setOptimizeResult(data)
+      setOptimizeMsg('✅ Optimal sizing applied!')
     } catch (err) {
-      setOptimizeMsg(`Backend unavailable — using client sim only. (${err.message})`)
+      setOptimizeMsg(`Backend unavailable. (${err.message})`)
     } finally {
       setOptimizing(false)
-      setTimeout(() => setOptimizeMsg(''), 4000)
+      setTimeout(() => setOptimizeMsg(''), 6000)
     }
-  }, [buildings])
+  }, [buildings, storageMode, targetRe, ghi, comp])
 
   // ── Slider configs — filtered by storage mode ────────────────
   const allSliders = [
@@ -530,6 +540,45 @@ export default function App() {
                     onChange={val => updateComp(s.key, val)}
                     onMaxChange={val => updateSliderMax(s.key, val)} />
                 ))}
+              </div>
+
+              {/* Target RE input */}
+              <div style={{ ...card, marginTop: 12, marginBottom: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>🎯 Optimization Target</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>Min RE fraction required</span>
+                  <input
+                    type="number" min={0} max={100} step={5} value={targetRe}
+                    onChange={e => setTargetRe(Math.max(0, Math.min(100, +e.target.value)))}
+                    style={{
+                      width: 64, padding: '4px 8px', borderRadius: 6, fontSize: 13,
+                      background: 'var(--bg-1)', color: '#10b981',
+                      border: '1px solid #10b981', fontWeight: 700, textAlign: 'center',
+                    }}
+                  />
+                  <span style={{ fontSize: 13, color: '#10b981', fontWeight: 700 }}>%</span>
+                </div>
+                {/* Live actual RE from simulation */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-2)' }}>Actual RE (current sizing)</span>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: results.reFraction >= targetRe ? '#10b981' : '#ef4444' }}>
+                    {results.reFraction}%
+                    {results.reFraction >= targetRe
+                      ? ' ✅'
+                      : ` ⚠️ (need ${targetRe}%)`}
+                  </span>
+                </div>
+                {/* Optimizer result */}
+                {optimizeResult && (
+                  <div style={{ marginTop: 8, padding: '6px 10px', borderRadius: 6, background: 'var(--bg-1)', fontSize: 11 }}>
+                    <span style={{ color: 'var(--text-2)' }}>Optimizer → </span>
+                    <span style={{ color: '#10b981', fontWeight: 600 }}>RE: {optimizeResult.actual_re}%</span>
+                    <span style={{ color: 'var(--text-3)' }}> · </span>
+                    <span style={{ color: '#f59e0b', fontWeight: 600 }}>LCOE: {optimizeResult.lcoe}¢/kWh</span>
+                    <span style={{ color: 'var(--text-3)' }}> · </span>
+                    <span style={{ color: '#3b82f6', fontWeight: 600 }}>€{Math.round(optimizeResult.estimated_annual_cost_eur / 1000)}k/yr</span>
+                  </div>
+                )}
               </div>
 
               {/* Optimize button */}
