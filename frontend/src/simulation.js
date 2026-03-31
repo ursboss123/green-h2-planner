@@ -36,6 +36,29 @@ export const H2_HHV = 39.4      // kWh per kg H2
 export const BATT_EFF = 0.95    // round-trip per side (charge/discharge)
 export const MAX_GRID_KW = 100_000
 
+// --- GHI reference (Abu Dhabi baseline) ---
+export const GHI_REFERENCE = 2285  // kWh/m²/yr
+
+// --- Location presets ---
+export const LOCATIONS = [
+  { name: 'Abu Dhabi, UAE',    ghi: 2285 },
+  { name: 'Dubai, UAE',        ghi: 2230 },
+  { name: 'Riyadh, KSA',      ghi: 2408 },
+  { name: 'Cairo, Egypt',      ghi: 2258 },
+  { name: 'Muscat, Oman',      ghi: 2260 },
+  { name: 'Doha, Qatar',       ghi: 2150 },
+  { name: 'Madrid, Spain',     ghi: 1700 },
+  { name: 'Los Angeles, USA',  ghi: 1847 },
+  { name: 'Sydney, Australia', ghi: 1716 },
+  { name: 'Singapore',         ghi: 1633 },
+  { name: 'New York, USA',     ghi: 1465 },
+  { name: 'Tokyo, Japan',      ghi: 1282 },
+  { name: 'Paris, France',     ghi: 1259 },
+  { name: 'Berlin, Germany',   ghi: 1082 },
+  { name: 'London, UK',        ghi: 1060 },
+  { name: 'Custom',            ghi: null  },
+]
+
 // --- Techno-economic parameters ---
 export const CAPEX = { solar: 900, electrolyzer: 1200, h2tank: 600, fuelcell: 1800, battery: 450 }
 export const OPEX_FRAC = { solar: 0.01, electrolyzer: 0.02, h2tank: 0.01, fuelcell: 0.02, battery: 0.01 }
@@ -51,9 +74,8 @@ export const CRF = (DISCOUNT_RATE * Math.pow(1 + DISCOUNT_RATE, LIFETIME)) /
 // ============================================================
 // Main simulation function
 // ============================================================
-export function simulate(buildings, components) {
-  // buildings: { residential: {enabled, count}, hospital: {...}, school: {...} }
-  // components: { solar, electrolyzer, h2tank, fuelcell, battery } all in kW/kWh/kg
+export function simulate(buildings, components, ghi = GHI_REFERENCE) {
+  const ghiScale = ghi / GHI_REFERENCE
 
   const hours = Array.from({ length: 24 }, (_, i) => i)
 
@@ -65,12 +87,12 @@ export function simulate(buildings, components) {
         : sum, 0)
   )
 
-  // Solar generation per hour (kW)
-  const solarGen = hours.map(h => SOLAR_PROFILE[h] * components.solar)
+  // Solar generation per hour scaled by GHI ratio
+  const solarGen = hours.map(h => SOLAR_PROFILE[h] * components.solar * ghiScale)
 
   // Initialise storage states
-  let battSOC = components.battery * 0.50   // start at 50% SOC
-  let h2Level = components.h2tank * 0.30    // start at 30% full
+  let battSOC = components.battery * 0.50
+  let h2Level = components.h2tank * 0.30
 
   const hourlyResults = []
   let totGridImport = 0, totGridExport = 0
@@ -87,14 +109,12 @@ export function simulate(buildings, components) {
     let h2Produced = 0, h2Consumed = 0
 
     if (surplus >= 0) {
-      // --- Surplus: charge battery, then run electrolyzer, then export ---
       const battRoom = (components.battery - battSOC) / BATT_EFF
       const ch = Math.min(surplus, battRoom, components.battery * 0.5)
       battCharge = ch
       battSOC = Math.min(components.battery, battSOC + ch * BATT_EFF)
       surplus -= ch
 
-      // Electrolyze remaining surplus if H2 tank has room
       const maxElec = Math.min(surplus, components.electrolyzer)
       if (maxElec > 0 && h2Level < components.h2tank) {
         const h2Can = Math.min(maxElec / ELEC_EFF, components.h2tank - h2Level)
@@ -109,7 +129,6 @@ export function simulate(buildings, components) {
       totGridExport += gridExport
 
     } else {
-      // --- Deficit: discharge battery, then fuel cell, then import from grid ---
       let deficit = -surplus
 
       const dis = Math.min(battSOC * BATT_EFF, components.battery * 0.5, deficit)
@@ -147,13 +166,11 @@ export function simulate(buildings, components) {
     })
   }
 
-  // --- Annual scaling (365 days) ---
-  const yrGridImport = totGridImport * 365    // kWh/yr
+  const yrGridImport = totGridImport * 365
   const yrGridExport = totGridExport * 365
-  const yrH2 = totH2Produced * 365           // kg/yr
-  const yrWater = totWaterUsed * 365         // litres/yr
+  const yrH2 = totH2Produced * 365
+  const yrWater = totWaterUsed * 365
 
-  // --- CAPEX ---
   const capexSolar = components.solar * CAPEX.solar
   const capexElec = components.electrolyzer * CAPEX.electrolyzer
   const capexH2 = components.h2tank * CAPEX.h2tank
@@ -161,7 +178,6 @@ export function simulate(buildings, components) {
   const capexBatt = components.battery * CAPEX.battery
   const totalCapex = capexSolar + capexElec + capexH2 + capexFC + capexBatt
 
-  // --- Annual costs ---
   const annCapex = totalCapex * CRF
   const annOpex =
     capexSolar * OPEX_FRAC.solar +
@@ -170,11 +186,10 @@ export function simulate(buildings, components) {
     capexFC * OPEX_FRAC.fuelcell +
     capexBatt * OPEX_FRAC.battery
   const annGridCost = yrGridImport * GRID_BUY - yrGridExport * GRID_SELL
-  const annWaterCost = (yrWater / 1000) * WATER_COST * 1000  // yrWater in litres
+  const annWaterCost = yrWater * WATER_COST
   const totalAnnualCost = annCapex + annOpex + annGridCost + annWaterCost
 
-  // --- KPIs ---
-  const totalLoad24h = totalLoad.reduce((a, b) => a + b, 0)   // kWh
+  const totalLoad24h = totalLoad.reduce((a, b) => a + b, 0)
   const totalSolar24h = solarGen.reduce((a, b) => a + b, 0)
   const peakLoad = Math.max(...totalLoad)
 
@@ -183,22 +198,19 @@ export function simulate(buildings, components) {
     : 100
 
   const lcoe = totalLoad24h > 0
-    ? (totalAnnualCost / (totalLoad24h * 365)) * 100   // ct/kWh
+    ? (totalAnnualCost / (totalLoad24h * 365)) * 100
     : 0
 
   const reFraction = totalLoad24h > 0
     ? Math.min(100, Math.round((totalSolar24h / totalLoad24h) * 100))
     : 0
 
-  // Rough CO2 avoided: grid import baseline vs actual (0.4 kg CO2/kWh grid factor)
-  const co2Avoided = Math.round(yrH2 * 9 / 1000)  // tonnes (H2 replaces grey H2)
+  const co2Avoided = Math.round(yrH2 * 9 / 1000)
 
   return {
     hourly: hourlyResults,
-    // Capacity
     peakLoad: Math.round(peakLoad),
     dailyEnergy: Math.round(totalLoad24h),
-    // Economics
     totalCapex: Math.round(totalCapex),
     annualCost: Math.round(totalAnnualCost),
     annCapex: Math.round(annCapex),
@@ -206,7 +218,6 @@ export function simulate(buildings, components) {
     annGridCost: Math.round(annGridCost),
     annWaterCost: Math.round(annWaterCost),
     lcoe: +lcoe.toFixed(2),
-    // Performance
     selfSupplyRate,
     reFraction,
     yrH2: Math.round(yrH2),
@@ -214,7 +225,6 @@ export function simulate(buildings, components) {
     yrGridImportMWh: Math.round(yrGridImport / 1000),
     yrGridExportMWh: Math.round(yrGridExport / 1000),
     co2Avoided,
-    // Chart data
     costBreakdown: [
       { name: 'CAPEX', value: Math.round(annCapex) },
       { name: 'O&M', value: Math.round(annOpex) },

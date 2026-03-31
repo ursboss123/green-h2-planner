@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts'
-import { simulate, calcScore, scoreRating, CAPEX, PEAK_DEMAND_KW } from './simulation'
+import { simulate, calcScore, scoreRating, CAPEX, PEAK_DEMAND_KW, LOCATIONS, GHI_REFERENCE } from './simulation'
 
 // ── Colour palette ──────────────────────────────────────────
 const C = {
@@ -215,6 +215,23 @@ export default function App() {
   const [optimizing, setOptimizing] = useState(false)
   const [optimizeMsg, setOptimizeMsg] = useState('')
 
+  // ── Location + GHI ───────────────────────────────────────────
+  const [locationIdx, setLocationIdx] = useState(0)   // index into LOCATIONS
+  const [customGhi, setCustomGhi] = useState(2285)
+  const ghi = LOCATIONS[locationIdx].ghi ?? customGhi
+
+  // ── Storage mode: 'h2' or 'battery' ─────────────────────────
+  const [storageMode, setStorageMode] = useState('h2')
+
+  // Zero out unused storage components when mode switches
+  useEffect(() => {
+    if (storageMode === 'h2') {
+      setComp(c => ({ ...c, battery: 0 }))
+    } else {
+      setComp(c => ({ ...c, electrolyzer: 0, h2tank: 0, fuelcell: 0 }))
+    }
+  }, [storageMode])
+
   // ── Per-component slider max (user-editable, auto-scales with load) ─────
   const [sliderMaxes, setSliderMaxes] = useState({
     solar: 5000, electrolyzer: 2000, h2tank: 10000, fuelcell: 1000, battery: 5000,
@@ -223,7 +240,7 @@ export default function App() {
   const updateSliderMax = useCallback((key, val) =>
     setSliderMaxes(m => ({ ...m, [key]: val })), [])
 
-  const results = useMemo(() => simulate(buildings, comp), [buildings, comp])
+  const results = useMemo(() => simulate(buildings, comp, ghi), [buildings, comp, ghi])
   const score = useMemo(() => calcScore(results), [results])
 
   // Auto-scale slider maxes when peak load changes significantly
@@ -280,14 +297,17 @@ export default function App() {
     }
   }, [buildings])
 
-  // ── Slider configs (max is dynamic / user-editable) ──────────
-  const sliders = [
-    { key: 'solar',        label: 'Solar PV',     icon: '☀️',  unit: 'kW',  min: 0, step: 50,  color: C.solar       },
-    { key: 'electrolyzer', label: 'Electrolyzer', icon: '⚡',  unit: 'kW',  min: 0, step: 25,  color: C.electrolyzer },
-    { key: 'h2tank',       label: 'H2 storage',   icon: '🫙',  unit: 'kg',  min: 0, step: 100, color: C.h2tank      },
-    { key: 'fuelcell',     label: 'Fuel cell',    icon: '🔋',  unit: 'kW',  min: 0, step: 25,  color: C.fuelcell    },
-    { key: 'battery',      label: 'Battery',      icon: '🔌',  unit: 'kWh', min: 0, step: 50,  color: C.battery     },
-  ].map(s => ({ ...s, max: sliderMaxes[s.key] }))
+  // ── Slider configs — filtered by storage mode ────────────────
+  const allSliders = [
+    { key: 'solar',        label: 'Solar PV',     icon: '☀️',  unit: 'kW',  min: 0, step: 50,  color: C.solar,        modes: ['h2','battery'] },
+    { key: 'electrolyzer', label: 'Electrolyzer', icon: '⚡',  unit: 'kW',  min: 0, step: 25,  color: C.electrolyzer, modes: ['h2'] },
+    { key: 'h2tank',       label: 'H2 storage',   icon: '🫙',  unit: 'kg',  min: 0, step: 100, color: C.h2tank,       modes: ['h2'] },
+    { key: 'fuelcell',     label: 'Fuel cell',    icon: '🔋',  unit: 'kW',  min: 0, step: 25,  color: C.fuelcell,     modes: ['h2'] },
+    { key: 'battery',      label: 'Battery',      icon: '🔌',  unit: 'kWh', min: 0, step: 50,  color: C.battery,      modes: ['battery'] },
+  ]
+  const sliders = allSliders
+    .filter(s => s.modes.includes(storageMode))
+    .map(s => ({ ...s, max: sliderMaxes[s.key] }))
 
   const rt = scoreRating(score)
 
@@ -354,8 +374,91 @@ export default function App() {
           <div>
             <h2 style={{ fontSize: 18, marginBottom: 6 }}>Design your energy district</h2>
             <p style={{ color: 'var(--text-2)', fontSize: 13, marginBottom: 20 }}>
-              Toggle building types and set unit counts to define community energy demand.
+              Set your location, storage strategy, and building mix.
             </p>
+
+            {/* ── Location + GHI ── */}
+            <div style={{ ...card, marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>📍 Location & Solar Resource</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 4 }}>Location</div>
+                  <select
+                    value={locationIdx}
+                    onChange={e => setLocationIdx(+e.target.value)}
+                    style={{
+                      width: '100%', padding: '7px 10px', borderRadius: 6, fontSize: 13,
+                      background: 'var(--bg-1)', color: 'var(--text-1)', border: '1px solid var(--border)',
+                    }}
+                  >
+                    {LOCATIONS.map((loc, i) => (
+                      <option key={i} value={i}>{loc.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 4 }}>
+                    GHI (kWh/m²/yr)
+                    {LOCATIONS[locationIdx].ghi && (
+                      <span style={{ color: '#10b981', marginLeft: 6 }}>
+                        {Math.round((ghi / GHI_REFERENCE) * 100)}% of Abu Dhabi baseline
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    value={ghi}
+                    disabled={LOCATIONS[locationIdx].ghi !== null}
+                    onChange={e => setCustomGhi(Math.max(200, Math.min(3000, +e.target.value)))}
+                    style={{
+                      width: '100%', padding: '7px 10px', borderRadius: 6, fontSize: 13,
+                      background: LOCATIONS[locationIdx].ghi ? 'var(--bg-3)' : 'var(--bg-1)',
+                      color: 'var(--text-1)', border: '1px solid var(--border)', boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+              {/* GHI bar */}
+              <div style={{ marginTop: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-3)', marginBottom: 3 }}>
+                  <span>London 1060</span><span>Abu Dhabi 2285</span><span>Riyadh 2408</span>
+                </div>
+                <div style={{ height: 6, background: 'var(--bg-3)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', borderRadius: 3,
+                    width: `${Math.min(100, (ghi / 2500) * 100)}%`,
+                    background: 'linear-gradient(90deg, #3b82f6, #f59e0b)',
+                    transition: 'width 0.3s',
+                  }} />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Storage mode toggle ── */}
+            <div style={{ ...card, marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>🔋 Storage Strategy</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {[
+                  { mode: 'h2', icon: '🟢', label: 'Green Hydrogen', sub: 'Electrolyzer + H2 tank + Fuel cell' },
+                  { mode: 'battery', icon: '⚡', label: 'Battery Storage', sub: 'Li-ion battery only' },
+                ].map(({ mode, icon, label, sub }) => (
+                  <div
+                    key={mode}
+                    onClick={() => setStorageMode(mode)}
+                    style={{
+                      padding: '12px 14px', borderRadius: 8, cursor: 'pointer',
+                      border: `2px solid ${storageMode === mode ? (mode === 'h2' ? '#10b981' : '#3b82f6') : 'var(--border)'}`,
+                      background: storageMode === mode ? (mode === 'h2' ? '#10b98122' : '#3b82f622') : 'var(--bg-1)',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 2 }}>{sub}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
               {Object.entries(buildings).map(([type, cfg]) => (
@@ -410,9 +513,12 @@ export default function App() {
             {/* Left: sliders */}
             <div>
               <h2 style={{ fontSize: 18, marginBottom: 6 }}>Size your energy systems</h2>
-              <p style={{ color: 'var(--text-2)', fontSize: 13, marginBottom: 16 }}>
-                Drag sliders to set component capacities. The simulation updates in real time.
-                Peak demand to cover: <strong style={{ color: '#38bdf8' }}>{results.peakLoad.toLocaleString()} kW</strong>
+              <p style={{ color: 'var(--text-2)', fontSize: 13, marginBottom: 6 }}>
+                Mode: <strong style={{ color: storageMode === 'h2' ? '#10b981' : '#3b82f6' }}>
+                  {storageMode === 'h2' ? '🟢 Green Hydrogen' : '⚡ Battery Storage'}
+                </strong>
+                &nbsp;·&nbsp; GHI: <strong style={{ color: '#f59e0b' }}>{ghi} kWh/m²/yr</strong>
+                &nbsp;·&nbsp; Peak load: <strong style={{ color: '#38bdf8' }}>{results.peakLoad.toLocaleString()} kW</strong>
               </p>
 
               <div style={card}>
