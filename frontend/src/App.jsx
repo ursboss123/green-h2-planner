@@ -169,7 +169,146 @@ function BuildingCard({ type, config, onToggle, onCount }) {
   )
 }
 
-// ── Score display ─────────────────────────────────────────────
+// ── Info tooltip ─────────────────────────────────────────────
+function InfoTip({ text }) {
+  const [show, setShow] = useState(false)
+  return (
+    <span style={{ position: 'relative', display: 'inline-block' }}>
+      <span
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 14, height: 14, borderRadius: '50%', fontSize: 9, fontWeight: 700,
+          background: 'var(--bg-3)', color: 'var(--text-2)', cursor: 'help',
+          border: '1px solid var(--border)', marginLeft: 4,
+        }}
+      >?</span>
+      {show && (
+        <div style={{
+          position: 'absolute', bottom: '120%', left: '50%', transform: 'translateX(-50%)',
+          background: '#1e293b', border: '1px solid #334155', borderRadius: 8,
+          padding: '8px 10px', fontSize: 11, color: '#cbd5e1', width: 220,
+          zIndex: 999, lineHeight: 1.5, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+        }}>
+          {text}
+          <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+            border: '5px solid transparent', borderTopColor: '#334155' }} />
+        </div>
+      )}
+    </span>
+  )
+}
+
+// ── Help modal ───────────────────────────────────────────────
+function HelpModal({ onClose }) {
+  const terms = [
+    {
+      term: 'RE Fraction (RF)',
+      def: 'Renewable Energy Fraction — the percentage of total electricity demand met directly by solar PV generation. Formula: Solar Generation / Total Load × 100. A higher RF means less dependence on fossil fuels.',
+    },
+    {
+      term: 'Self-Supply Rate',
+      def: 'The percentage of total load met without importing from the grid. Includes solar, battery discharge, and fuel cell output. Formula: (1 − Grid Import / Total Load) × 100. Different from RF because it includes stored energy (H2 or battery) as well as direct solar.',
+    },
+    {
+      term: 'LCOE (Levelised Cost of Energy)',
+      def: 'Levelised Cost of Electricity in cents per kWh. The average cost to generate one unit of electricity over the project lifetime, including all CAPEX, O&M, grid, and water costs. Lower = better economics.',
+    },
+    {
+      term: 'CAPEX',
+      def: 'Capital Expenditure — one-time upfront investment in equipment (solar panels, electrolyzer, tanks, fuel cell, battery). Annualised using Capital Recovery Factor (CRF) at 6% discount rate over 25 years.',
+    },
+    {
+      term: 'CRF (Capital Recovery Factor)',
+      def: 'Converts total CAPEX into an equivalent annual payment. Formula: CRF = r(1+r)ⁿ / ((1+r)ⁿ−1), where r = discount rate (6%), n = lifetime (25 yr). Used to fairly compare upfront vs recurring costs.',
+    },
+    {
+      term: 'GHI (Global Horizontal Irradiance)',
+      def: 'Total solar energy received per unit area per year (kWh/m²/yr). Higher GHI = more solar generation from the same installed capacity. Abu Dhabi: 2285, London: 1060. Scales solar output proportionally.',
+    },
+    {
+      term: 'Electrolyzer',
+      def: 'Converts surplus electricity into hydrogen via water electrolysis (H₂O → H₂ + ½O₂). Efficiency: 50 kWh of electricity produces 1 kg of hydrogen. Consumes 9 litres of water per kg H₂.',
+    },
+    {
+      term: 'Fuel Cell',
+      def: 'Converts stored hydrogen back to electricity (H₂ + ½O₂ → H₂O + electricity). Electric efficiency: 50% (HHV basis). Used to cover load during periods of low solar and low battery.',
+    },
+    {
+      term: 'H2 Tank',
+      def: 'Stores compressed hydrogen produced by the electrolyzer. Sized in kg. Acts as long-duration energy storage — hours to days of backup. Cost: €600/kg capacity.',
+    },
+    {
+      term: 'CO₂ Avoided',
+      def: 'Tonnes of CO₂ per year avoided compared to a full-grid baseline. Calculated as: (Annual Load − Grid Import) × 0.4 kgCO₂/kWh ÷ 1000. Uses UAE average grid emission factor of 0.4 kgCO₂/kWh.',
+    },
+    {
+      term: 'Dispatch Priority',
+      def: 'Order in which the system uses energy sources. Surplus solar: (1) charge battery, (2) run electrolyzer, (3) export to grid. Deficit: (1) discharge battery, (2) fuel cell from H₂, (3) import from grid.',
+    },
+  ]
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+      zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 24,
+    }} onClick={onClose}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 12,
+          padding: 24, maxWidth: 680, width: '100%', maxHeight: '80vh',
+          overflowY: 'auto',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>📖 Glossary & User Guide</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-2)', fontSize: 20, cursor: 'pointer' }}>✕</button>
+        </div>
+
+        {/* How to use */}
+        <div style={{ background: 'var(--bg-1)', borderRadius: 8, padding: 14, marginBottom: 20, borderLeft: '3px solid #38bdf8' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#38bdf8' }}>🚀 How to Use This Tool</div>
+          {[
+            ['Step 1 — Design District', 'Choose your location (sets GHI/solar resource), select storage strategy (Green H₂ or Battery), then toggle building types and set unit counts. The 24h load profile updates in real time.'],
+            ['Step 2 — Size Systems', 'Use the sliders to set component capacities. Watch the KPIs on the right update instantly. Goal: minimise LCOE while meeting your RE fraction and self-supply targets. Click the max label on any slider to extend its range.'],
+            ['Step 3 — Results', 'Review 24h dispatch chart, storage state of charge, and annual cost breakdown. Use the score as a relative benchmark — higher is better.'],
+          ].map(([title, desc]) => (
+            <div key={title} style={{ marginBottom: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-1)' }}>{title}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2, lineHeight: 1.6 }}>{desc}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Glossary */}
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>📚 Key Terms</div>
+        {terms.map(({ term, def }) => (
+          <div key={term} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#38bdf8', marginBottom: 4 }}>{term}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.7 }}>{def}</div>
+          </div>
+        ))}
+
+        {/* Assumptions */}
+        <div style={{ background: 'var(--bg-1)', borderRadius: 8, padding: 14, marginTop: 8, borderLeft: '3px solid #f59e0b' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#f59e0b' }}>⚙️ Model Assumptions</div>
+          {[
+            'Simulation repeats the same 24h profile for 365 days (no seasonal variation)',
+            'Grid emission factor: 0.4 kgCO₂/kWh (UAE average)',
+            'Grid buy price: €0.18/kWh · Grid sell price: €0.05/kWh',
+            'Discount rate: 6% · Project lifetime: 25 years',
+            'Battery one-way efficiency: 95% · Fuel cell efficiency: 50% (HHV)',
+            'Electrolyzer: 50 kWh/kg H₂ · Water consumption: 9 L/kg H₂',
+          ].map(a => (
+            <div key={a} style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>• {a}</div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 function ScoreDisplay({ score }) {
   const rt = scoreRating(score)
   return (
@@ -210,6 +349,7 @@ const HOURS = Array.from({ length: 24 }, (_, i) => `${i}:00`)
 // ============================================================
 export default function App() {
   const [step, setStep] = useState(0)
+  const [showHelp, setShowHelp] = useState(false)
   const [buildings, setBuildings] = useState(DEFAULT_BUILDINGS)
   const [comp, setComp] = useState(DEFAULT_COMP)
 
@@ -281,6 +421,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-1)', color: 'var(--text-1)' }}>
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <header style={{
@@ -314,6 +455,11 @@ export default function App() {
             <div style={{ fontSize: 10, color: 'var(--text-3)' }}>SCORE</div>
             <div style={{ fontWeight: 700, fontSize: 20, color: rt.color }}>{score}</div>
           </div>
+          <button onClick={() => setShowHelp(true)} style={{
+            background: 'var(--bg-3)', border: '1px solid var(--border)',
+            color: 'var(--text-1)', borderRadius: 8, padding: '6px 14px',
+            cursor: 'pointer', fontSize: 13, fontWeight: 600,
+          }}>📖 Guide</button>
         </div>
       </header>
 
@@ -509,11 +655,26 @@ export default function App() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <KpiCard label="Total CAPEX" value={fmtM(results.totalCapex)} color="#3b82f6" />
                   <KpiCard label="Annual cost" value={`${fmtM(results.annualCost)}/yr`} color="#f59e0b" />
-                  <KpiCard label="LCOE" value={`${results.lcoe}¢/kWh`} color="#10b981" />
-                  <KpiCard label="Self-supply" value={`${results.selfSupplyRate}%`} color="#8b5cf6" />
+                  <div style={{ background: 'var(--bg-1)', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 2, display: 'flex', alignItems: 'center' }}>
+                      LCOE <InfoTip text="Levelised Cost of Electricity (ct/kWh). Total annual cost ÷ annual load. Lower = better. Includes CAPEX, O&M, grid, and water costs." />
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 600, color: '#10b981' }}>{results.lcoe}¢/kWh</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-1)', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 2, display: 'flex', alignItems: 'center' }}>
+                      Self-Supply <InfoTip text="% of total load met without grid import. Includes direct solar + battery discharge + fuel cell. Formula: (1 − Grid Import / Total Load) × 100." />
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 600, color: '#8b5cf6' }}>{results.selfSupplyRate}%</div>
+                  </div>
                   <KpiCard label="H2 produced" value={`${(results.yrH2 / 1000).toFixed(1)} t/yr`} color="#06b6d4" />
                   <KpiCard label="Water for H2" value={`${results.yrWaterM3} m³/yr`} color="#06b6d4" />
-                  <KpiCard label="RE fraction" value={`${results.reFraction}%`} color="#10b981" />
+                  <div style={{ background: 'var(--bg-1)', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 2, display: 'flex', alignItems: 'center' }}>
+                      RE Fraction <InfoTip text="Renewable Energy Fraction — % of load covered directly by solar PV. Formula: Solar Generation ÷ Total Load × 100. Does not include stored energy re-dispatch." />
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 600, color: '#10b981' }}>{results.reFraction}%</div>
+                  </div>
                   <KpiCard label="Grid import" value={`${results.yrGridImportMWh} MWh/yr`} color="#ef4444" />
                 </div>
               </div>

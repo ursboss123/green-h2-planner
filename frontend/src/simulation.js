@@ -205,7 +205,16 @@ export function simulate(buildings, components, ghi = GHI_REFERENCE) {
     ? Math.min(100, Math.round((totalSolar24h / totalLoad24h) * 100))
     : 0
 
-  const co2Avoided = Math.round(yrH2 * 9 / 1000)
+  // CO2 avoided vs full-grid baseline (UAE grid factor 0.4 kgCO2/kWh)
+  // = all electricity NOT imported from grid (i.e. met by solar/H2/battery) * emission factor
+  const GRID_EMISSION_FACTOR = 0.4   // kgCO2/kWh
+  const yrSolarUsed = (totalSolar24h - totGridExport) * 365  // solar that actually served load or storage
+  const co2Avoided = Math.round(
+    Math.max(0, (yrGridImport === 0
+      ? totalLoad24h * 365   // fully off-grid: displace everything
+      : (totalLoad24h * 365 - yrGridImport)   // partial: displace what grid didn't cover
+    ) * GRID_EMISSION_FACTOR / 1000)   // tonnes CO2/yr
+  )
 
   return {
     hourly: hourlyResults,
